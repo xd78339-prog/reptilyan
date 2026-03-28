@@ -1,66 +1,44 @@
+const { Client } = require('discord.js-selfbot-v13');
 const express = require('express');
-const axios = require("axios");
 const app = express();
-const PORT = process.env.PORT || 3000;
 
-app.get("/", (req, res) => {
-  res.send("100 WPM Beklemesiz Sistem Aktif!");
-});
+// Render'ın uykuya dalmaması için Web Portu açıyoruz
+const port = process.env.PORT || 3000;
+app.get('/', (req, res) => res.send('Lunar Automation Aktif!'));
+app.listen(port, () => console.log(`Sunucu ${port} portunda çalışıyor.`));
 
-app.listen(PORT, () => {
-  console.log(`Sunucu ${PORT} portunda aktif.`);
-});
+const client = new Client({ checkUpdate: false });
 
-const TOKEN = process.env.TOKEN; 
-const CHANNEL_IDS = process.env.CHANNEL_IDS;
-const MESSAGE = process.env.MESSAGE; // Tek mesaj
+// Environment Variables'dan verileri çekiyoruz
+const TOKEN = process.env.TOKEN;
+const MESSAGE = process.env.MESSAGE;
+const CHANNELS = process.env.CHANNEL_IDS ? process.env.CHANNEL_IDS.split(',') : [];
 
-if (!TOKEN || !CHANNEL_IDS || !MESSAGE) {
-    console.error("HATA: TOKEN, CHANNEL_IDS veya MESSAGE eksik!");
-} else {
-    const channelList = CHANNEL_IDS.split(",").map(c => c.trim());
+const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+client.on('ready', async () => {
+    console.log(`${client.user.tag} olarak giriş yapıldı!`);
     
-    async function startProcess() {
-        console.log("Sistem başlatıldı: 100 WPM ve 0 Bekleme Süresi.");
-        
-        while (true) { 
-            for (const channelId of channelList) {
-                try {
-                    // 1. "Yazıyor..." animasyonu
-                    await axios.post(
-                        `https://discord.com/api/v9/channels/${channelId}/typing`,
-                        {},
-                        { headers: { "Authorization": TOKEN } }
-                    );
-
-                    // 2. 100 WPM HESABI: Harf başına 120ms bekleme
-                    const typingTime = MESSAGE.length * 120;
-                    console.log(`[${channelId}] Yazılıyor: ${Math.round(typingTime)}ms`);
-                    
-                    await new Promise(resolve => setTimeout(resolve, typingTime));
-
-                    // 3. Mesajı Gönder
-                    await axios.post(
-                        `https://discord.com/api/v9/channels/${channelId}/messages`,
-                        { content: MESSAGE },
-                        { headers: { "Authorization": TOKEN } }
-                    );
-
-                    console.log(`[${channelId}] ✅ Mesaj Atıldı. Beklemeden sıradaki işleme geçiliyor.`);
-                    
-                    // BEKLEME SÜRESİ KALDIRILDI - Hemen döngü başına döner
-
-                } catch (err) {
-                    if (err.response?.status === 429) {
-                        const retryAfter = (err.response.data.retry_after * 1000) || 5000;
-                        console.error(`[${channelId}] ⚠️ Rate Limit! ${Math.round(retryAfter/1000)}sn zorunlu mola.`);
-                        await new Promise(resolve => setTimeout(resolve, retryAfter));
-                    } else {
-                        console.error(`[${channelId}] ❌ Hata: ${err.response?.status}. Sonraki kanala geçiliyor.`);
-                    }
+    // Sonsuz döngü
+    while (true) {
+        for (const channelId of CHANNELS) {
+            try {
+                const channel = await client.channels.fetch(channelId.trim());
+                if (channel) {
+                    await channel.send(MESSAGE);
+                    console.log(`Mesaj gönderildi: ${channelId}`);
                 }
+            } catch (err) {
+                console.error(`Kanal hatası (${channelId}):`, err.message);
             }
+            // Her kanal geçişinde 2 saniye bekleme
+            await wait(2000);
         }
+        // Tüm kanallar bittikten sonra döngünün başa dönmesi için kısa bir nefes payı
+        await wait(1000); 
     }
-    startProcess();
-}
+});
+
+client.login(TOKEN).catch(err => {
+    console.error("Token hatalı veya giriş yapılamadı:", err);
+});
