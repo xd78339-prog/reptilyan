@@ -1,44 +1,70 @@
-const { Client } = require('discord.js-selfbot-v13');
 const express = require('express');
+const axios = require("axios");
+
 const app = express();
+const PORT = process.env.PORT || 3000;
 
-// Render'ın uykuya dalmaması için Web Portu açıyoruz
-const port = process.env.PORT || 3000;
-app.get('/', (req, res) => res.send('Lunar Automation Aktif!'));
-app.listen(port, () => console.log(`Sunucu ${port} portunda çalışıyor.`));
+app.get("/", (req, res) => {
+  res.send("Bot yazma özelliğiyle aktif!");
+});
 
-const client = new Client({ checkUpdate: false });
+app.listen(PORT, () => {
+  console.log(`Sunucu ${PORT} portunda dinleniyor.`);
+});
 
-// Environment Variables'dan verileri çekiyoruz
-const TOKEN = process.env.TOKEN;
-const MESSAGE = process.env.MESSAGE;
-const CHANNELS = process.env.CHANNEL_IDS ? process.env.CHANNEL_IDS.split(',') : [];
+// --- AYARLAR ---
+const token = process.env.TOKEN;
+const message = process.env.MESSAGE;
+const channels = [
+  "1467580268075421789",
+  "1465058037088784447",
+  "1465052769743405128"
+];
 
-const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+let currentIndex = 0;
 
-client.on('ready', async () => {
-    console.log(`${client.user.tag} olarak giriş yapıldı!`);
-    
-    // Sonsuz döngü
-    while (true) {
-        for (const channelId of CHANNELS) {
-            try {
-                const channel = await client.channels.fetch(channelId.trim());
-                if (channel) {
-                    await channel.send(MESSAGE);
-                    console.log(`Mesaj gönderildi: ${channelId}`);
-                }
-            } catch (err) {
-                console.error(`Kanal hatası (${channelId}):`, err.message);
-            }
-            // Her kanal geçişinde 2 saniye bekleme
-            await wait(2000);
-        }
-        // Tüm kanallar bittikten sonra döngünün başa dönmesi için kısa bir nefes payı
-        await wait(1000); 
+if (!token || !message) {
+    console.error("HATA: TOKEN veya MESSAGE eksik!");
+} else {
+    // Döngüyü başlat
+    setInterval(handleCycle, 5000);
+}
+
+async function handleCycle() {
+  const currentChannelId = channels[currentIndex];
+
+  try {
+    // 1. Önce "Yazıyor..." animasyonunu gönder
+    await axios.post(`https://discord.com/api/v9/channels/${currentChannelId}/typing`, {}, {
+      headers: { "Authorization": token }
+    });
+
+    // 2. Kısa bir gecikme (Gerçekçi görünmesi için 1.5 saniye bekle ve mesajı at)
+    setTimeout(() => {
+      sendActualMessage(currentChannelId);
+    }, 1500);
+
+  } catch (err) {
+    console.error(`❌ Typing hatası (${currentChannelId}):`, err.response?.status);
+    // Hata olsa bile sırayı kaydır ki takılmasın
+    currentIndex = (currentIndex + 1) % channels.length;
+  }
+}
+
+function sendActualMessage(channelId) {
+  axios.post(`https://discord.com/api/v9/channels/${channelId}/messages`, {
+    content: message
+  }, {
+    headers: {
+      "Authorization": token,
+      "Content-Type": "application/json"
     }
-});
-
-client.login(TOKEN).catch(err => {
-    console.error("Token hatalı veya giriş yapılamadı:", err);
-});
+  }).then(() => {
+    console.log(`✅ Mesaj Gönderildi: ${channelId}`);
+    // Mesaj başarılıysa bir sonraki kanala geç
+    currentIndex = (currentIndex + 1) % channels.length;
+  }).catch((err) => {
+    console.error(`❌ Mesaj Hatası (${channelId}):`, err.response?.status);
+    currentIndex = (currentIndex + 1) % channels.length;
+  });
+}
